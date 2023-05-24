@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "South Central US"
+    },
+    "functionVnetName": {
+      "value": "SpokeVNet"
+    },
+    "functionVnetResourceGroup": {
+      "value": "RG-FuncAppTest-Spoke"
+    },
+    "functionSubnetName": {
+      "value": "functionSubnet"
+    },
+    "privateEndpointSubnetName": {
+      "value": "PESubnet"
+    },
+    "functionStorageAccountName": {
+      "value": "zcfuncappstoragetest28"// must be globally unique
+    },
+    "functionPlanOS": {
+      "value": "Windows" // Allowed values: Windows or Linux
+    },
+    "functionAppPlanSku": {
+      "value": "EP1" // Allowed values: EP1, EP2, or EP3
+    },
+    "functionAppPlanName": {
+      "value": "zcfunctionappnonprod-Plann"
+    },
+    "linuxFxVersion": {
+      "value": "" // nly required for Linux app to represent runtime stack in the format of 'runtime|runtimeVersion'. For example: 'python|3.9'
+    },
+    "functionWorkerRuntime": {
+      "value": "dotnet" // Allowed values: dotnet, node, python, java
+    },
+    "functionAppName": {
+      "value": "zcfunctionappnonprod-test"
+    }
+  }
+}

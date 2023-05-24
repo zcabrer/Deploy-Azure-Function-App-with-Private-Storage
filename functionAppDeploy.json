@@ -1,0 +1,303 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "privateDnsZoneSubscription": {
+            "type": "string",
+            "defaultValue": "xxxxxxx-xxxx-xxxx-xxxx-xxxxxxx",
+            "metadata": {
+                "description": "The subscriptionId where the Private DNS Zone is deployed."
+            }
+        },
+        "privateDnsZoneResourceGroup": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "The ResourceGroup where the Private DNS Zone is deployed."
+            }
+        },
+        "functionVnetName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the existing VNet."
+            }
+        },
+        "functionVnetResourceGroup": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the existing VNet's Resource Group."
+            }
+        },
+        "functionSubnetName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the subnet to be created."
+            }
+        },
+        "functionStorageAccountName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of the backend Azure storage account used by the Azure Function app."
+            }
+        },
+        "location": {
+            "type": "string",
+            "defaultValue": "[resourceGroup().location]",
+            "metadata": {
+                "description": "The location into which the resources should be deployed."
+            }
+        },
+        "privateEndpointSubnetName": {
+            "type": "string",
+            "defaultValue": "snet-pe",
+            "metadata": {
+                "description": "The name of the virtual network subnet used for allocating IP addresses for private endpoints."
+            }
+        },
+        "functionAppPlanName": {
+            "type": "string",
+            "defaultValue": "[format('plan-{0}', uniqueString(resourceGroup().id))]",
+            "metadata": {
+                "description": "The name of the Azure Function hosting plan."
+            }
+        },
+        "functionAppPlanSku": {
+            "type": "string",
+            "defaultValue": "EP1",
+            "allowedValues": [
+                "EP1",
+                "EP2",
+                "EP3"
+            ],
+            "metadata": {
+                "description": "Specifies the Azure Function hosting plan SKU."
+            }
+        },
+        "functionPlanOS": {
+            "type": "string",
+            "defaultValue": "Windows",
+            "allowedValues": [
+                "Windows",
+                "Linux"
+            ],
+            "metadata": {
+                "description": "Specifies the OS used for the Azure Function hosting plan."
+            }
+        },
+        "functionAppName": {
+            "type": "string",
+            "defaultValue": "[format('func-{0}', uniqueString(resourceGroup().id))]",
+            "metadata": {
+                "description": "The name of the Azure Function app."
+            }
+        },
+        "linuxFxVersion": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Only required for Linux app to represent runtime stack in the format of 'runtime|runtimeVersion'. For example: 'python|3.9'"
+            }
+        },
+        "functionWorkerRuntime": {
+            "type": "string",
+            "defaultValue": "node",
+            "allowedValues": [
+                "dotnet",
+                "node",
+                "python",
+                "java"
+            ],
+            "metadata": {
+                "description": "The language worker runtime to load in the function app."
+            }
+        }
+    },
+    "variables": {
+        "privateEndpointStorageBlobName": "[format('{0}-blob-private-endpoint', parameters('functionStorageAccountName'))]",
+        "privateStorageBlobDnsZoneName": "[format('privatelink.blob.{0}', environment().suffixes.storage)]",
+        "applicationInsightsName": "[format('appi-{0}', uniqueString(resourceGroup().id))]",
+        "isReserved": "[if(equals(parameters('functionPlanOS'), 'Linux'), true(), false())]"
+
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2022-05-01",
+            "name": "[parameters('functionStorageAccountName')]",
+            "location": "[parameters('location')]",
+            "kind": "StorageV2",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "properties": {
+                "publicNetworkAccess": "Disabled",
+                "allowBlobPublicAccess": false,
+                "networkAcls": {
+                    "bypass": "None",
+                    "defaultAction": "Deny"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Network/privateEndpoints",
+            "apiVersion": "2022-05-01",
+            "name": "[variables('privateEndpointStorageBlobName')]",
+            "location": "[parameters('location')]",
+            "properties": {
+                "subnet": {
+                    "id": "[resourceId(parameters('functionVnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('functionVnetName'), parameters('privateEndpointSubnetName'))]"
+                },
+                "privateLinkServiceConnections": [
+                    {
+                        "name": "MyStorageBlobPrivateLinkConnection",
+                        "properties": {
+                            "privateLinkServiceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName'))]",
+                            "groupIds": [
+                                "blob"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+            "apiVersion": "2022-05-01",
+            "name": "[format('{0}/{1}', variables('privateEndpointStorageBlobName'), 'blobPrivateDnsZoneGroup')]",
+            "properties": {
+                "privateDnsZoneConfigs": [
+                    {
+                        "name": "config",
+                        "properties": {
+                            "privateDnsZoneId": "[resourceId(parameters('privateDnsZoneSubscription'), parameters('privateDnsZoneResourceGroup'), 'Microsoft.Network/privateDnsZones', variables('privateStorageBlobDnsZoneName'))]"
+                        }
+                    }
+                ]
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', variables('privateEndpointStorageBlobName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2021-04-01",
+            "name": "nestedTemplate1",
+            "resourceGroup": "[parameters('functionVnetResourceGroup')]",
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "resources": [
+                        {
+                            "apiVersion": "2019-04-01",
+                            "type": "Microsoft.Network/virtualNetworks/subnets",
+                            "name": "[concat(parameters('functionVnetName'), '/', parameters('functionSubnetName'))]",
+                            "location": "[resourceGroup().location]",
+                            "properties": {
+                                "privateEndpointNetworkPolicies": "Enabled",
+                                "privateLinkServiceNetworkPolicies": "Enabled",
+                                "delegations": [
+                                    {
+                                        "name": "webapp",
+                                        "properties": {
+                                            "serviceName": "Microsoft.Web/serverFarms"
+                                        }
+                                    }
+                                ],
+                                "addressPrefix": "[reference(resourceId(parameters('functionVnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('functionVnetName'), parameters('functionSubnetName')), '2022-09-01', 'Full').properties.addressPrefix]"
+                            }
+                        }
+                    ]
+                },
+                "parameters": {}
+            }
+        },
+        {
+            "type": "Microsoft.Insights/components",
+            "apiVersion": "2020-02-02",
+            "name": "[variables('applicationInsightsName')]",
+            "location": "[parameters('location')]",
+            "kind": "web",
+            "properties": {
+                "Application_Type": "web"
+            }
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2022-03-01",
+            "name": "[parameters('functionAppPlanName')]",
+            "location": "[parameters('location')]",
+            "sku": {
+                "tier": "ElasticPremium",
+                "name": "[parameters('functionAppPlanSku')]",
+                "size": "[parameters('functionAppPlanSku')]",
+                "family": "EP"
+            },
+            "kind": "elastic",
+            "properties": {
+                "maximumElasticWorkerCount": 20,
+                "reserved": "[variables('isReserved')]"
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-03-01",
+            "name": "[parameters('functionAppName')]",
+            "location": "[parameters('location')]",
+            "kind": "[if(variables('isReserved'), 'functionapp,linux', 'functionapp')]",
+            "properties": {
+                "reserved": "[variables('isReserved')]",
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('functionAppPlanName'))]",
+                "siteConfig": {
+                    "functionsRuntimeScaleMonitoringEnabled": true,
+                    "linuxFxVersion": "[if(variables('isReserved'), parameters('linuxFxVersion'), json('null'))]",
+                    "appSettings": [
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(resourceId('Microsoft.Insights/components', variables('applicationInsightsName')), '2020-02-02').InstrumentationKey]"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1}', parameters('functionStorageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName')), '2022-05-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                            "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1}', parameters('functionStorageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName')), '2022-05-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~4"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "[parameters('functionWorkerRuntime')]"
+                        },
+                        {
+                            "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                            "value": "~14"
+                        },
+                        {
+                            "name": "WEBSITE_VNET_ROUTE_ALL",
+                            "value": "1"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTOVERVNET",
+                            "value": "1"
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', variables('applicationInsightsName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', parameters('functionAppPlanName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName'))]",
+                "[resourceId('Microsoft.Network/privateEndpoints/privateDnsZoneGroups', variables('privateEndpointStorageBlobName'), 'blobPrivateDnsZoneGroup')]"
+            ]
+        }
+    ]
+}
