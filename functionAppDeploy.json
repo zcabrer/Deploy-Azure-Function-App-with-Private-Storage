@@ -114,10 +114,11 @@
     },
     "variables": {
         "privateEndpointStorageBlobName": "[format('{0}-blob-private-endpoint', parameters('functionStorageAccountName'))]",
+        "privateEndpointFunctionName": "[format('{0}-function-private-endpoint', parameters('functionAppName'))]",
         "privateStorageBlobDnsZoneName": "[format('privatelink.blob.{0}', environment().suffixes.storage)]",
+        "privateFunctionDnsZoneName": "privatelink.azurewebsites.net",
         "applicationInsightsName": "[format('appi-{0}', uniqueString(resourceGroup().id))]",
         "isReserved": "[if(equals(parameters('functionPlanOS'), 'Linux'), true(), false())]"
-
     },
     "resources": [
         {
@@ -149,7 +150,7 @@
                 },
                 "privateLinkServiceConnections": [
                     {
-                        "name": "MyStorageBlobPrivateLinkConnection",
+                        "name": "MyFunctionPrivateLinkConnection",
                         "properties": {
                             "privateLinkServiceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName'))]",
                             "groupIds": [
@@ -161,6 +162,31 @@
             },
             "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/privateEndpoints",
+            "apiVersion": "2022-05-01",
+            "name": "[variables('privateEndpointFunctionName')]",
+            "location": "[parameters('location')]",
+            "properties": {
+                "subnet": {
+                    "id": "[resourceId(parameters('functionVnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('functionVnetName'), parameters('privateEndpointSubnetName'))]"
+                },
+                "privateLinkServiceConnections": [
+                    {
+                        "name": "MyStorageBlobPrivateLinkConnection",
+                        "properties": {
+                            "privateLinkServiceId": "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+                            "groupIds": [
+                                "sites"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
             ]
         },
         {
@@ -179,6 +205,24 @@
             },
             "dependsOn": [
                 "[resourceId('Microsoft.Network/privateEndpoints', variables('privateEndpointStorageBlobName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+            "apiVersion": "2022-05-01",
+            "name": "[format('{0}/{1}', variables('privateEndpointFunctionName'), 'functionPrivateDnsZoneGroup')]",
+            "properties": {
+                "privateDnsZoneConfigs": [
+                    {
+                        "name": "config",
+                        "properties": {
+                            "privateDnsZoneId": "[resourceId(parameters('privateDnsZoneSubscription'), parameters('privateDnsZoneResourceGroup'), 'Microsoft.Network/privateDnsZones', variables('privateFunctionDnsZoneName'))]"
+                        }
+                    }
+                ]
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', variables('privateEndpointFunctionName'))]"
             ]
         },
         {
@@ -297,6 +341,18 @@
                 "[resourceId('Microsoft.Web/serverfarms', parameters('functionAppPlanName'))]",
                 "[resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName'))]",
                 "[resourceId('Microsoft.Network/privateEndpoints/privateDnsZoneGroups', variables('privateEndpointStorageBlobName'), 'blobPrivateDnsZoneGroup')]"
+            ]
+        },
+        {
+            "type": "Microsoft.Web/sites/networkConfig",
+            "apiVersion": "2022-03-01",
+            "name": "[format('{0}/{1}', parameters('functionAppName'), 'virtualNetwork')]",
+            "properties": {
+                "subnetResourceId": "[resourceId(parameters('functionVnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('functionVnetName'), parameters('functionSubnetName'))]",
+                "swiftSupported": true
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
             ]
         }
     ]

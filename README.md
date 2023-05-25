@@ -5,7 +5,8 @@
 This ARM Template deploys the following:
 
 - App Service Plan
-- Function App
+- Function App (with VNet Integration to secure Outbound traffic)
+- Function App Private Endpoint (for inbound access to the App)
 - Application Insights
 - Subnet Delegation for Microsoft.Web/serverFarms
 - Storage Account
