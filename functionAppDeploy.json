@@ -150,7 +150,7 @@
                 },
                 "privateLinkServiceConnections": [
                     {
-                        "name": "MyFunctionPrivateLinkConnection",
+                        "name": "MyStorageBlobPrivateLinkConnection",
                         "properties": {
                             "privateLinkServiceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName'))]",
                             "groupIds": [
@@ -175,7 +175,7 @@
                 },
                 "privateLinkServiceConnections": [
                     {
-                        "name": "MyStorageBlobPrivateLinkConnection",
+                        "name": "MyFunctionPrivateLinkConnection",
                         "properties": {
                             "privateLinkServiceId": "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
                             "groupIds": [
